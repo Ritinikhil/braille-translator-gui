@@ -43,6 +43,9 @@ import queue
 
 user_preferences_file_path = os.environ['HOME']+'/.braille-translator.cfg'
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+
 class BrailleTranslatorWindow(Gtk.Window):
     def __init__(self):
         Gtk.Window.__init__(self, title="Braille Translator")
@@ -103,7 +106,7 @@ class BrailleTranslatorWindow(Gtk.Window):
         self.table_store = Gtk.ListStore(str, str)
 
         #represents a file path and filename of languge table
-        filename_with_path="/usr/share/BrailleTranslator/language-table-dict.txt";
+        filename_with_path=os.path.join(project_root,"data","language-table-dict.txt")
         with open(
         filename_with_path, "r") as file:
             for line in file:
@@ -131,7 +134,7 @@ class BrailleTranslatorWindow(Gtk.Window):
         label.set_mnemonic_widget(self.language_combo1)
         
         #for spin button
-        label = Gtk.Label("line limit")
+        label = Gtk.Label(label="line limit")
         box_primary_widgets.pack_start(label, False, False, 0)
         
         # Create the spin button
@@ -1040,39 +1043,86 @@ class BrailleTranslatorWindow(Gtk.Window):
 
     def on_theme_changed(self,widget, textview):
         theme = widget.get_active()
-        
+
         font_color = self.theme_store[theme][1]
         background_color = self.theme_store[theme][2]
-        
-        if(theme == 0):
-            textview.modify_fg(Gtk.StateFlags.NORMAL, None)
-            textview.modify_bg(Gtk.StateFlags.NORMAL, None)
-            font_color = "#000000" 
+
+        if theme == 0:
+            # Default theme - use CSS to reset colors
+            css_provider = Gtk.CssProvider()
+            css = "textview { color: inherit; background-color: inherit; }"
+            css_provider.load_from_data(css.encode())
+
+            style_context = textview.get_style_context()
+            style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+            font_color = "#000000"
             background_color = "#ffffff"
         else:
-            textview.modify_fg(Gtk.StateFlags.NORMAL, 
-            Gdk.color_parse(font_color))
-            textview.modify_bg(Gtk.StateFlags.NORMAL, 
-            Gdk.color_parse(background_color ))
+            # Apply custom theme colors using CSS
+            css_provider = Gtk.CssProvider()
+            css = f"textview {{ color: {font_color}; background-color: {background_color}; }}"
+            css_provider.load_from_data(css.encode())
+
+            style_context = textview.get_style_context()
+            style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
         self.set_cursor_color(textview, font_color)
         self.set_selection_color(textview, font_color, background_color)
 
-        if(textview == self.textview1):
-            self.pref.theme_1 = theme
-        else:
-            self.pref.theme_2 = theme
-        self.pref.save_preferences_to_file(user_preferences_file_path)
-
     #font style/size
     def on_font_set(self,widget, textview):
-        font = widget.get_font_name();
-        pangoFont = Pango.FontDescription(font)
-        textview.modify_font(pangoFont)
+        # Get the font string
+        font_str = widget.get_font()
 
-        if(textview == self.textview1):
-            self.pref.font_1 = font
+        # Parse font string to extract components safely
+        parts = font_str.split()
+
+        # Get font family (assume it's the first part that's not a number)
+        family = parts[0]
+
+        # Try to find a size in the font string (usually a number followed by "px")
+        size = None
+        for part in parts:
+            if part.isdigit():
+                size = part
+                break
+
+        # Create CSS provider
+        css_provider = Gtk.CssProvider()
+
+        # Build CSS with separate properties instead of using the shorthand "font" property
+        css = f"""textview {{
+            font-family: "{family}";
+        """
+
+        if size:
+            css += f"font-size: {size}pt;\n"
+
+        if "Bold" in font_str:
+            css += "font-weight: bold;\n"
+
+        if "Italic" in font_str:
+            css += "font-style: italic;\n"
+
+        css += "}"
+
+        try:
+            css_provider.load_from_data(css.encode())
+            style_context = textview.get_style_context()
+            style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        except Exception as e:
+            print(f"Error setting font: {e}")
+            # Fallback to a minimal CSS if there's an error
+            fallback_css = f'textview {{ font-family: "{family}"; }}'
+            css_provider.load_from_data(fallback_css.encode())
+            style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        # Update preferences
+        if textview == self.textview1:
+            self.pref.font_1 = font_str
         else:
-            self.pref.font_2 = font
+            self.pref.font_2 = font_str
         self.pref.save_preferences_to_file(user_preferences_file_path)
 
     #undo
@@ -1162,10 +1212,10 @@ class MyAboutDialog(Gtk.AboutDialog):
         
         #self.set_version("")
         
-        self.set_website_label("GNU General Public License,version 0.1" 
+        self.set_website_label("GNU General Public License, version 0.1. " 
         "Visit BrailleTranslator Home page")
         
-        self.set_website("http://wwww,zendalona.com//braille-translator")
+        self.set_website("http://www.zendalona.com//braille-translator")
         self.set_authors(["Greeshna Sarath"])
         self.set_documenters(["Greeshna Sarath"])
         self.set_artists(["Nalin Sathyan" ,"Dr.Saritha Namboodiri", 
@@ -1364,3 +1414,4 @@ class FindAndReplace(Find):
 if __name__ == "__main__":
     win = BrailleTranslatorWindow()
     win.connect("destroy", Gtk.main_quit)
+
